@@ -1,0 +1,87 @@
+{
+  // Default – levný univerzální model
+  "github.copilot.chat.model": "gpt-5.3-codex",
+
+  // Globální nastavení Copilota
+  "github.copilot.chat.enableAutoSend": false,
+  "github.copilot.editor.enableAutoCompletions": true,
+  "github.copilot.editor.enableCodeActions": true,
+
+  // -----------------------------
+  // PHP (čisté PHP)
+  // -----------------------------
+  "[php]": {
+    "github.copilot.chat.model": "gpt-5.3-codex",
+    "github.copilot.chat.maxResponseTokens": 800,
+    "github.copilot.chat.preferShortResponses": true,
+    "github.copilot.chat.useProjectContext": false,
+    "github.copilot.chat.useFileContext": true
+  },
+
+  // -----------------------------
+  // Laravel (Blade)
+  // -----------------------------
+  "[blade]": {
+    "github.copilot.chat.model": "gpt-5.4",
+    "github.copilot.chat.maxResponseTokens": 2000,
+    "github.copilot.chat.preferShortResponses": false,
+    "github.copilot.chat.useProjectContext": true,
+    "github.copilot.chat.useFileContext": true
+  },
+
+  // -----------------------------
+  // JavaScript / TypeScript
+  // -----------------------------
+  "[javascript]": {
+    "github.copilot.chat.model": "gpt-5.4-mini",
+    "github.copilot.chat.maxResponseTokens": 600,
+    "github.copilot.chat.preferShortResponses": true,
+    "github.copilot.chat.useProjectContext": false,
+    "github.copilot.chat.useFileContext": true
+  },
+  "[typescript]": {
+    "github.copilot.chat.model": "gpt-5.4-mini",
+    "github.copilot.chat.useProjectContext": false,
+    "github.copilot.chat.useFileContext": true
+  },
+
+  // -----------------------------
+  // HTML / CSS
+  // -----------------------------
+  "[html]": {
+    "github.copilot.chat.model": "gpt-5.4-mini"
+  },
+  "[css]": {
+    "github.copilot.chat.model": "gpt-5.4-mini"
+  },
+
+  // -----------------------------
+  // Astro
+  // -----------------------------
+  "[astro]": {
+    "github.copilot.chat.model": "gpt-5.3-codex",
+    "github.copilot.chat.maxResponseTokens": 900,
+    "github.copilot.chat.preferShortResponses": true,
+    "github.copilot.chat.useFileContext": true,
+    "github.copilot.chat.useProjectContext": false
+  },
+
+  // -----------------------------
+  // Python
+  // -----------------------------
+  "[python]": {
+    "github.copilot.chat.model": "gpt-5.4",
+    "github.copilot.chat.maxResponseTokens": 1500,
+    "github.copilot.chat.preferShortResponses": false,
+    "github.copilot.chat.useFileContext": true,
+    "github.copilot.chat.useProjectContext": false
+  },
+
+  // -----------------------------
+  // Markdown
+  // -----------------------------
+  "[markdown]": {
+    "github.copilot.chat.model": "gpt-5.4-mini",
+    "github.copilot.chat.preferShortResponses": true
+  }
+}

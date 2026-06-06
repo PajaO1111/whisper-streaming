@@ -1,0 +1,501 @@
+<!doctype html>
+<html lang="cs">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src https: data:; style-src https: 'unsafe-inline'; script-src 'unsafe-inline'; media-src blob: data: https:; connect-src https: http://127.0.0.1:5005;" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Whisper Diktafon</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
+  <style>
+    body {
+      min-height: 100vh;
+      background: linear-gradient(120deg, #f7f3ec 0%, #ece3d3 100%);
+      padding: 18px;
+      font-family: "Segoe UI", sans-serif;
+    }
+
+    .panel {
+      max-width: 760px;
+      margin: 0 auto;
+      border: 1px solid #e3d8c6;
+      border-radius: 14px;
+      box-shadow: 0 8px 30px rgba(40, 29, 15, 0.08);
+    }
+
+    .status-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: #9aa0a6;
+      display: inline-block;
+      margin-right: 8px;
+    }
+
+    .status-dot.recording {
+      background: #d43f3f;
+      animation: blink 1s infinite;
+    }
+
+    .transcript-box {
+      min-height: 140px;
+      white-space: pre-wrap;
+      background: #fff;
+      border: 1px solid #d7cdc0;
+      border-radius: 10px;
+      padding: 12px;
+      font-size: 0.95rem;
+      line-height: 1.45;
+    }
+
+    @keyframes blink {
+      0% { opacity: 1; }
+      50% { opacity: 0.3; }
+      100% { opacity: 1; }
+    }
+  </style>
+</head>
+<body>
+  <div class="card panel">
+    <div class="card-body">
+      <h2 class="h4 mb-2">Whisper Nahrávání</h2>
+      <p class="text-muted mb-3">Play (Start) spustí nahrávání, Stop ho ukončí. Potom se provede přepis textu.</p>
+
+      <div id="durationRow" class="row g-3 mb-3">
+        <div class="col-12 col-md-6">
+          <label class="form-label" for="model">Model</label>
+          <select class="form-select" id="model">
+            <option value="small">small</option>
+            <option value="medium">medium</option>
+            <option value="large-v3">large-v3</option>
+          </select>
+        </div>
+        <div class="col-12 col-md-6">
+          <label class="form-label" for="duration">Auto stop (sekundy)</label>
+          <input class="form-control" id="duration" type="number" min="1" max="120" value="8" />
+        </div>
+      </div>
+
+      <div class="form-check mb-3">
+        <input class="form-check-input" type="checkbox" id="formatPoetry" checked>
+        <label class="form-check-label" for="formatPoetry">Formátovat věty podle pauz</label>
+      </div>
+
+      <div class="form-check mb-3">
+        <input class="form-check-input" type="checkbox" id="autoTranscribe" checked>
+        <label class="form-check-label" for="autoTranscribe">Automaticky přepsat po stisku Stop</label>
+      </div>
+
+      <div class="form-check mb-3">
+        <input class="form-check-input" type="checkbox" id="streamingMode">
+        <label class="form-check-label" for="streamingMode">&#127897; Streaming (živý přepis &ndash; segmenty 3&nbsp;s)</label>
+      </div>
+
+      <div class="d-flex flex-wrap gap-2 mb-3">
+        <button id="playBtn" class="btn btn-success" type="button">Play</button>
+        <button id="stopBtn" class="btn btn-danger" type="button" disabled>Stop</button>
+        <button id="transcribeBtn" class="btn btn-primary" type="button" disabled>Přepsat text</button>
+        <button id="replayBtn" class="btn btn-outline-secondary" type="button" disabled>Přehrát nahrávku</button>
+      </div>
+
+      <div class="mb-3 text-muted">
+        <span id="dot" class="status-dot"></span>
+        <span id="statusText">Připraveno.</span>
+      </div>
+
+      <h3 class="h6">Přepsaný text</h3>
+      <div id="transcript" class="transcript-box text-muted">Zatím bez přepisu.</div>
+      <audio id="audioPreview" class="mt-3 w-100" controls></audio>
+    </div>
+  </div>
+
+  <script>
+    const hasVsCodeApi = typeof acquireVsCodeApi === "function";
+    const vscode = hasVsCodeApi
+      ? acquireVsCodeApi()
+      : { postMessage: () => {} };
+
+    // ── UI references ────────────────────────────────────────────────────
+    const playBtn = document.getElementById("playBtn");
+    const stopBtn = document.getElementById("stopBtn");
+    const transcribeBtn = document.getElementById("transcribeBtn");
+    const replayBtn = document.getElementById("replayBtn");
+    const modelSelect = document.getElementById("model");
+    const durationInput = document.getElementById("duration");
+    const formatPoetryCheckbox = document.getElementById("formatPoetry");
+    const autoTranscribeCheckbox = document.getElementById("autoTranscribe");
+    const streamingModeCheckbox = document.getElementById("streamingMode");
+    const durationRow = document.getElementById("durationRow");
+    const transcript = document.getElementById("transcript");
+    const statusText = document.getElementById("statusText");
+    const dot = document.getElementById("dot");
+    const audioPreview = document.getElementById("audioPreview");
+
+    // ── State ──────────────────────────────────────────────────────────────
+    let mediaRecorder = null;
+    let stream = null;
+    let chunks = [];
+    let currentBlob = null;
+    let currentMimeType = "audio/webm";
+    let stopTimer = null;
+    let isRecording = false;
+    let isTranscribing = false;
+    let streamAccumulated = ""; // Text sestavený během streamingu
+
+    const SEGMENT_DURATION_MS = 3000;          // délka jednoho segmentu
+    const BACKEND_STREAM_URL = "http://127.0.0.1:5005/stream";
+
+    // ── Streaming mode toggle ────────────────────────────────────────────
+    streamingModeCheckbox.addEventListener("change", () => {
+      const streaming = streamingModeCheckbox.checked;
+      durationRow.style.display = streaming ? "none" : "";
+      autoTranscribeCheckbox.closest(".form-check").style.display = streaming ? "none" : "";
+      updateButtons();
+    });
+
+    // ── VS Code message handler ──────────────────────────────────────────
+    window.addEventListener("message", (event) => {
+      const message = event.data;
+      if (!message || !message.type) return;
+
+      if (message.type === "init") {
+        const cfg = message.config || {};
+        if (cfg.defaultModel) modelSelect.value = cfg.defaultModel;
+        if (typeof cfg.recordingDurationMs === "number") {
+          durationInput.value = String(Math.max(1, Math.round(cfg.recordingDurationMs / 1000)));
+        }
+        return;
+      }
+
+      if (message.type === "transcriptionResult") {
+        transcript.textContent = message.text && message.text.trim()
+          ? message.text
+          : "Přepis je prázdný.";
+        transcript.classList.remove("text-muted", "text-danger");
+        setStatus("Přepis dokončen.", "ready");
+        finishTranscriptionState();
+        return;
+      }
+
+      if (message.type === "transcriptionError") {
+        transcript.textContent = message.message || "Přepis selhal.";
+        transcript.classList.add("text-danger");
+        setStatus("Přepis selhal.", "ready");
+        finishTranscriptionState();
+        return;
+      }
+
+      // Streaming: výsledek chunku vrácený z extension
+      if (message.type === "streamChunkResult") {
+        const text = (message.text || "").trim();
+        if (text) appendStreamText(text);
+        if (isRecording) setStatus("Naslouchám\u2026", "recording");
+      }
+    });
+
+    // ── Helpers ───────────────────────────────────────────────────────────
+    function setStatus(text, state) {
+      statusText.textContent = text;
+      dot.classList.toggle("recording", state === "recording");
+    }
+
+    function updateButtons() {
+      const streaming = streamingModeCheckbox.checked;
+      playBtn.disabled = isRecording;
+      stopBtn.disabled = !isRecording;
+      transcribeBtn.disabled = streaming || isRecording || !currentBlob || isTranscribing;
+      replayBtn.disabled = streaming || !currentBlob;
+    }
+
+    function finishTranscriptionState() {
+      if (isTranscribing) {
+        isTranscribing = false;
+        updateButtons();
+      }
+    }
+
+    function clearStream() {
+      if (stream) stream.getTracks().forEach((t) => t.stop());
+      stream = null;
+    }
+
+    async function blobToBase64(blob) {
+      const arr = await blob.arrayBuffer();
+      let binary = "";
+      const bytes = new Uint8Array(arr);
+      const chunkSize = 0x8000;
+      for (let i = 0; i < bytes.length; i += chunkSize) {
+        binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunkSize));
+      }
+      return btoa(binary);
+    }
+
+    function createRecorderWithFallback(inputStream) {
+      const candidates = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4"];
+      for (const candidate of candidates) {
+        if (!MediaRecorder.isTypeSupported(candidate)) continue;
+        try {
+          return { recorder: new MediaRecorder(inputStream, { mimeType: candidate }), mimeType: candidate };
+        } catch {}
+      }
+      try {
+        const rec = new MediaRecorder(inputStream);
+        return { recorder: rec, mimeType: rec.mimeType || "audio/webm" };
+      } catch { return null; }
+    }
+
+    function getFileExtension(mimeType) {
+      if (mimeType.includes("mp4")) return "mp4";
+      if (mimeType.includes("wav")) return "wav";
+      return "webm";
+    }
+
+    // ── Deduplication ─────────────────────────────────────────────────────
+    /** Vrátí počet znaků na začátku b, které se překrývají s koncem a. */
+    function findOverlapLength(a, b) {
+      const maxCheck = Math.min(a.length, b.length, 100);
+      for (let len = maxCheck; len >= 8; len--) {
+        if (a.endsWith(b.slice(0, len))) return len;
+      }
+      return 0;
+    }
+
+    /** Přidá text do streamu, odstraní případný překryv s předchozím textem. */
+    function appendStreamText(text) {
+      text = text.trim();
+      if (!text) return;
+      const overlap = findOverlapLength(streamAccumulated, text);
+      const toAppend = text.slice(overlap).trim();
+      if (!toAppend) return;
+      streamAccumulated += (streamAccumulated ? "\n" : "") + toAppend;
+      transcript.textContent = streamAccumulated;
+      transcript.classList.remove("text-muted", "text-danger");
+    }
+
+    // ── Streaming: odeslání segmentu na backend ───────────────────────────
+    async function sendStreamChunk(blob) {
+      if (!blob || blob.size < 500) return;
+      const ext = getFileExtension(currentMimeType);
+
+      if (hasVsCodeApi) {
+        // Extension zpracuje volání backendu a vloží text do editoru;
+        // výsledek se vrátí jako zpráva streamChunkResult
+        const base64Audio = await blobToBase64(blob);
+        vscode.postMessage({
+          type: "streamChunk",
+          base64Audio,
+          fileExtension: ext,
+          model: modelSelect.value,
+          formatPoetry: formatPoetryCheckbox.checked
+        });
+        return;
+      }
+
+      // Standalone: přímý fetch na /stream
+      try {
+        const formData = new FormData();
+        formData.append("file", blob, `audio.${ext}`);
+        formData.append("model", modelSelect.value);
+        formData.append("format_poetry", String(formatPoetryCheckbox.checked));
+        const response = await fetch(BACKEND_STREAM_URL, { method: "POST", body: formData });
+        if (!response.ok) throw new Error(`Backend ${response.status}`);
+        const json = await response.json();
+        const text = (json.text || "").trim();
+        if (text) appendStreamText(text);
+      } catch (err) {
+        console.warn("Stream chunk chyba:", err);
+      }
+    }
+
+    // ── Micro-recording smyčka (streaming mód) ────────────────────────────
+    function startMicroRecording() {
+      if (!isRecording || !stream) return;
+      chunks = [];
+      const recorderInfo = createRecorderWithFallback(stream);
+      if (!recorderInfo) {
+        setStatus("Nepodařilo se spustit mikrofon.", "ready");
+        stopRecording();
+        return;
+      }
+      mediaRecorder = recorderInfo.recorder;
+      currentMimeType = recorderInfo.mimeType;
+      mediaRecorder.ondataavailable = (e) => {
+        if (e.data && e.data.size > 0) chunks.push(e.data);
+      };
+      mediaRecorder.onstop = () => {
+        if (!isRecording) return;
+        const blob = new Blob(chunks, { type: currentMimeType });
+        sendStreamChunk(blob).catch(console.warn); // fire-and-forget
+        startMicroRecording(); // okamžitě spustit další segment
+      };
+      try {
+        mediaRecorder.start();
+        setTimeout(() => {
+          if (mediaRecorder && mediaRecorder.state === "recording") mediaRecorder.stop();
+        }, SEGMENT_DURATION_MS);
+      } catch {
+        setStatus("Nahrávání selhalo.", "ready");
+      }
+    }
+
+    // ── Hlavní ovládání nahrávání ─────────────────────────────────────────
+    async function startRecording() {
+      if (isRecording) return;
+
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        setStatus("Prohlížeč nepodporuje getUserMedia.", "ready");
+        return;
+      }
+
+      if (typeof MediaRecorder === "undefined") {
+        setStatus("Prohlížeč nepodporuje MediaRecorder API.", "ready");
+        return;
+      }
+
+      try {
+        setStatus("Žádost o přístup k mikrofonu\u2026", "ready");
+        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      } catch (err) {
+        const reason = err && err.name ? err.name : "Neznámá chyba";
+        setStatus(`Mikrofon není dostupný (${reason}).`, "ready");
+        return;
+      }
+
+      isRecording = true;
+      chunks = [];
+      currentBlob = null;
+      transcript.classList.add("text-muted");
+      transcript.classList.remove("text-danger");
+      updateButtons();
+
+      if (streamingModeCheckbox.checked) {
+        // ── Streaming mód ────────────────────────────────────────────────
+        streamAccumulated = "";
+        transcript.textContent = "Naslouchám\u2026";
+        setStatus("Naslouchám\u2026 (streaming)", "recording");
+        startMicroRecording();
+        return;
+      }
+
+      // ── Batch mód ────────────────────────────────────────────────────────
+      const recorderInfo = createRecorderWithFallback(stream);
+      if (!recorderInfo) {
+        clearStream();
+        isRecording = false;
+        updateButtons();
+        setStatus("Nepodařilo se inicializovat MediaRecorder.", "ready");
+        return;
+      }
+
+      mediaRecorder = recorderInfo.recorder;
+      currentMimeType = recorderInfo.mimeType || "audio/webm";
+
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data && event.data.size > 0) chunks.push(event.data);
+      };
+
+      mediaRecorder.onstop = () => {
+        currentBlob = new Blob(chunks, { type: currentMimeType });
+        audioPreview.src = URL.createObjectURL(currentBlob);
+        setStatus("Nahrávání ukončeno.", "ready");
+        clearStream();
+        isRecording = false;
+        if (stopTimer) { clearTimeout(stopTimer); stopTimer = null; }
+        updateButtons();
+        if (autoTranscribeCheckbox.checked) sendToTranscribe();
+      };
+
+      try {
+        mediaRecorder.start();
+      } catch {
+        clearStream();
+        isRecording = false;
+        updateButtons();
+        setStatus("Nahrávání se nepodařilo spustit.", "ready");
+        return;
+      }
+
+      setStatus(`Nahrávám (${currentMimeType})\u2026`, "recording");
+
+      const durationMs = Math.max(1000, Number(durationInput.value || 8) * 1000);
+      stopTimer = setTimeout(() => {
+        if (mediaRecorder && mediaRecorder.state === "recording") mediaRecorder.stop();
+      }, durationMs);
+    }
+
+    function stopRecording() {
+      isRecording = false; // Příznak nejdřív, aby se micro-smyčka zastavila
+      if (mediaRecorder && mediaRecorder.state === "recording") mediaRecorder.stop();
+      if (stopTimer) { clearTimeout(stopTimer); stopTimer = null; }
+      clearStream();
+      setStatus(
+        streamingModeCheckbox.checked ? "Streaming ukončen." : "Ukončuji nahrávání\u2026",
+        "ready"
+      );
+      updateButtons();
+    }
+
+    async function sendToTranscribe() {
+      if (!currentBlob || isTranscribing) return;
+      isTranscribing = true;
+      updateButtons();
+      setStatus("Odesílám audio na backend\u2026", "ready");
+      transcript.textContent = "Probíhá přepis\u2026";
+      transcript.classList.add("text-muted");
+      transcript.classList.remove("text-danger");
+
+      try {
+        const base64Audio = await blobToBase64(currentBlob);
+        const fileExtension = getFileExtension(currentMimeType);
+
+        if (hasVsCodeApi) {
+          vscode.postMessage({
+            type: "recordingReady",
+            base64Audio,
+            fileExtension,
+            model: modelSelect.value,
+            formatPoetry: formatPoetryCheckbox.checked
+          });
+        } else {
+          const formData = new FormData();
+          formData.append("file", currentBlob, `audio.${fileExtension}`);
+          formData.append("model", modelSelect.value);
+          formData.append("format_poetry", String(formatPoetryCheckbox.checked));
+
+          const response = await fetch("http://127.0.0.1:5005/transcribe", {
+            method: "POST",
+            body: formData
+          });
+
+          if (!response.ok) throw new Error(`Backend chyba ${response.status}: ${await response.text()}`);
+
+          const json = await response.json();
+          transcript.textContent = json.text && json.text.trim() ? json.text : "Přepis je prázdný.";
+          transcript.classList.remove("text-muted", "text-danger");
+          setStatus("Přepis dokončen (standalone).", "ready");
+          finishTranscriptionState();
+        }
+      } catch (err) {
+        const reason = err && err.message ? err.message : "Nepodařilo se připravit audio pro přepis.";
+        transcript.textContent = reason;
+        transcript.classList.remove("text-muted");
+        transcript.classList.add("text-danger");
+        setStatus("Chyba při přepisu.", "ready");
+        finishTranscriptionState();
+      }
+    }
+
+    if (!hasVsCodeApi) {
+      setStatus("Standalone režim: přepis jde přímo na backend.", "ready");
+    }
+
+    playBtn.addEventListener("click", startRecording);
+    stopBtn.addEventListener("click", stopRecording);
+    transcribeBtn.addEventListener("click", sendToTranscribe);
+    replayBtn.addEventListener("click", () => {
+      if (audioPreview.src) { audioPreview.currentTime = 0; audioPreview.play(); }
+    });
+
+    updateButtons();
+  </script>
+</body>
+</html>

@@ -1,0 +1,57 @@
+{
+  "name": "whisper-poezie",
+  "displayName": "Whisper Poezie",
+  "version": "0.0.1",
+  "publisher": "pavel",
+  "engines": {
+    "vscode": "^1.70.0"
+  },
+  "activationEvents": [
+    "onCommand:whisper.start"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "whisper.start",
+        "title": "🎤 Diktovat poezii"
+      }
+    ],
+    "configuration": {
+      "title": "Whisper Poezie",
+      "properties": {
+        "whisper.backendUrl": {
+          "type": "string",
+          "default": "http://127.0.0.1:5005/transcribe",
+          "description": "URL FastAPI endpointu pro přepis hlasu."
+        },
+        "whisper.recordingDurationMs": {
+          "type": "number",
+          "default": 8000,
+          "minimum": 1000,
+          "description": "Délka záznamu v milisekundách při automatickém zastavení."
+        },
+        "whisper.defaultModel": {
+          "type": "string",
+          "default": "large-v3",
+          "enum": [
+            "small",
+            "medium",
+            "large-v3"
+          ],
+          "description": "Výchozí Whisper model použitý při přepisu."
+        },
+        "whisper.saveRecordings": {
+          "type": "boolean",
+          "default": true,
+          "description": "Uložit původní audio nahrávky do složky projektu."
+        },
+        "whisper.recordingsFolder": {
+          "type": "string",
+          "default": ".whisper-recordings",
+          "description": "Relativní složka v projektu pro ukládání nahrávek."
+        }
+      }
+    }
+  },
+  "main": "./extension.js"
+}

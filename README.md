@@ -1,5 +1,70 @@
 
+<<<<<<< HEAD
 # 🇨🇿 **README.md (CZ verze)**
+=======
+
+# Whisper Streaming – Realtime Czech Speech‑to‑Text (FastAPI + Faster‑Whisper + VS Code Extension)
+
+![Header](docs/header.png)  
+*(placeholder – vlož vlastní obrázek)*
+
+Whisper Streaming je lokální nástroj pro **přepis mluveného slova do textu v reálném čase**, optimalizovaný pro **češtinu**, **poezii** a **rychlou práci v editoru**.  
+Projekt kombinuje:
+
+- **Faster‑Whisper (large‑v3)** – extrémně rychlý GPU přepis  
+- **FastAPI backend** – lokální REST API + streaming endpoint  
+- **VS Code Extension** – nahrávání mikrofonu a živé vkládání textu do editoru  
+- **Streaming audio chunks (250–500 ms)** – realtime přepis bez čekání  
+
+Celý systém běží **lokálně**, bez cloudu, bez odesílání dat mimo počítač.
+
+---
+
+## ✨ Funkce
+
+- 🎤 **Živý přepis hlasu** (streaming, žádné čekání na konec nahrávání)
+- ⚡ **GPU akcelerace** (CUDA 12.1, PyTorch)
+- 🧠 **Whisper large‑v3** – nejlepší model pro češtinu
+- 📝 **Automatické vkládání textu do VS Code editoru**
+- 📐 **Optimalizace pro poezii** (pauzy → verše)
+- 🌐 **FastAPI backend** (REST + streaming endpoint)
+- 🔒 **100% lokální běh** – žádná data neopouštějí počítač
+- 🧩 **Modulární architektura** – backend + extension
+
+---
+
+## 📦 Architektura
+
+![Architecture](docs/architecture.png)  
+*(placeholder – vlož vlastní obrázek)*
+
+### **1) VS Code Extension**
+- nahrává mikrofon pomocí `MediaRecorder`
+- každých 250–500 ms odesílá audio chunk
+- přijímá text a vkládá ho do editoru
+
+### **2) FastAPI Backend**
+- endpoint `/stream` pro realtime přepis
+- endpoint `/transcribe` pro celé soubory
+- běží na `http://127.0.0.1:5005`
+
+### **3) Faster‑Whisper**
+- model: `large-v3`
+- běží na GPU (`float16`)
+- extrémně rychlý přepis i pro dlouhé věty
+
+---
+
+## 🚀 Instalace
+
+### 1) Klonování repozitáře
+
+```bash
+git clone https://github.com/PajaO1111/whisper-streaming.git
+cd whisper-streaming
+
+Lokální backend pro přepis češtiny pomocí `faster-whisper` + jednoduché VS Code rozšíření pro diktování textu.
+>>>>>>> e6008ef89a09d9a63ba83669c7b7aeb361319ced
 
 ```markdown
 # Whisper Streaming – Přepis mluveného slova do textu v reálném čase (FastAPI + Faster‑Whisper + VS Code Extension)
